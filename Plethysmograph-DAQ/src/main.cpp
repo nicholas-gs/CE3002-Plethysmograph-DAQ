@@ -9,21 +9,12 @@
  * ADC noise reduction mode is also used to improve the noise environment for the ADC, enabling higher resolution measurements.
 **/
 
+#include "AuthKeys.h"
+#include "Definitions.h"
+#include "SoftwareSerial.h"
 #include <Arduino.h>
-
-// Definitions
-#define ADC_SIMPLE     0
-#define ADC_OVERSAMPLE 1
-#define DEBUG_ON       1
-#define DEBUG_OFF      0
-
-#define SERIAL_BAUD_RATE 9600
-#define ADC_REF          5
-#define ADC_STEPS        4096
-
-// Configurations
-#define ADC_MODE   ADC_OVERSAMPLE
-#define DEBUG_MODE DEBUG_ON
+#include <BlynkSimpleShieldEsp8266.h>
+#include <ESP8266_Lib.h>
 
 #if ADC_MODE == ADC_OVERSAMPLE
 #include <avr/sleep.h>
@@ -41,9 +32,25 @@ double convert_adc_val(uint16_t adc_val);
 // Interrupts
 EMPTY_INTERRUPT(ADC_vect);
 
+// Object Initialization
+SoftwareSerial Esp8266Serial(ESP_SERIAL_RECEIVE_PIN, ESP_SERIAL_TRANSMIT_PIN);
+ESP8266 esp8266(&Esp8266Serial);
+
 void setup() {
     // put your setup code here, to run once:
+
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, LOW);
+
+    pinMode(BUZZER_PIN, OUTPUT);
+    digitalWrite(BUZZER_PIN, LOW);
+
     Serial.begin(SERIAL_BAUD_RATE);
+    Esp8266Serial.begin(ESP8266_BAUD_RATE);
+
+#if DEBUG_MODE == DEBUG_ON
+    Serial.println(F("Serial setup completed"));
+#endif
 
 #if ADC_MODE == ADC_OVERSAMPLE
     init_adc_pins();
@@ -54,9 +61,17 @@ void setup() {
 #elif ADC_MODE == ADC_SIMPLE
     pinMode(A0, INPUT);
 #endif
+    Serial.println(esp8266.getStationIp());
+#if DEBUG_MODE == DEBUG_ON
+    Serial.println(F("Setting up Blynk"));
+#endif
+    Blynk.begin(auth, esp8266, ssid, pass);
+#if DEBUG_MODE == DEBUG_ON
+    Serial.println(F("Blynk started!"));
+#endif
 
 #if DEBUG_MODE == DEBUG_ON
-    Serial.println("End of setup");
+    Serial.println(F("End of setup"));
 #endif
 
     delay(50);
@@ -64,6 +79,9 @@ void setup() {
 
 void loop() {
     // put your main code here, to run repeatedly:
+
+    Blynk.run();
+
     double voltage_reading;
 #if ADC_MODE == ADC_OVERSAMPLE
     voltage_reading = convert_adc_val(oversample_16x());
@@ -71,9 +89,9 @@ void loop() {
     uint16_t adc_reading = analogRead(A0);
     voltage_reading = ((double)adc_reading / (double)1024) * ((double)ADC_REF);
 #endif
-    Serial.print(voltage_reading);
-    Serial.println(" V");
-    delay(200);
+    // Send voltage reading to matlab through serial port
+    Serial.println(voltage_reading);
+    delay(100);
 }
 
 #if ADC_MODE == ADC_OVERSAMPLE
@@ -133,3 +151,11 @@ uint16_t oversample_16x() {
 }
 
 #endif
+
+// Blynk controlling alert on Arduino
+// It turns on the LED and the piezoelectric speaker
+BLYNK_WRITE(V0) {
+    int pinValue = param.asInt();
+    digitalWrite(LED_PIN, pinValue);
+    digitalWrite(BUZZER_PIN, pinValue);
+}
