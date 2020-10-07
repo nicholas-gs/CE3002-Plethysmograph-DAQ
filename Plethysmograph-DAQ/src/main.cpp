@@ -16,11 +16,11 @@
 #include <BlynkSimpleShieldEsp8266.h>
 #include <ESP8266_Lib.h>
 
-#if ADC_MODE == ADC_OVERSAMPLE
+#if ADC_MODE == ADC_AVERAGE || ADC_MODE == ADC_EWMA
 #include <avr/sleep.h>
 #endif
 
-#if ADC_MODE == ADC_OVERSAMPLE
+#if ADC_MODE == ADC_AVERAGE || ADC_MODE == ADC_EWMA
 // Forward declarations
 void init_adc_pins();
 void init_adc();
@@ -33,8 +33,10 @@ double convert_adc_val(uint16_t adc_val);
 EMPTY_INTERRUPT(ADC_vect);
 
 // Object Initialization
+#if WIRELESS_MODE == WIFI_PRESENT
 SoftwareSerial Esp8266Serial(ESP_SERIAL_RECEIVE_PIN, ESP_SERIAL_TRANSMIT_PIN);
 ESP8266 esp8266(&Esp8266Serial);
+#endif
 
 void setup() {
     // put your setup code here, to run once:
@@ -46,13 +48,14 @@ void setup() {
     digitalWrite(BUZZER_PIN, LOW);
 
     Serial.begin(SERIAL_BAUD_RATE);
+#if WIRELESS_MODE == WIFI_PRESENT
     Esp8266Serial.begin(ESP8266_BAUD_RATE);
-
+#endif
 #if DEBUG_MODE == DEBUG_ON
     Serial.println(F("Serial setup completed"));
 #endif
 
-#if ADC_MODE == ADC_OVERSAMPLE
+#if ADC_MODE == ADC_AVERAGE
     init_adc_pins();
     init_adc();
     init_adc_sleepmode();
@@ -61,11 +64,13 @@ void setup() {
 #elif ADC_MODE == ADC_SIMPLE
     pinMode(A0, INPUT);
 #endif
-    Serial.println(esp8266.getStationIp());
+    // Serial.println(esp8266.getStationIp());
 #if DEBUG_MODE == DEBUG_ON
     Serial.println(F("Setting up Blynk"));
 #endif
+#if WIRELESS_MODE == WIFI_PRESENT
     Blynk.begin(auth, esp8266, ssid, pass);
+#endif
 #if DEBUG_MODE == DEBUG_ON
     Serial.println(F("Blynk started!"));
 #endif
@@ -79,29 +84,31 @@ void setup() {
 
 void loop() {
     // put your main code here, to run repeatedly:
-
+#if WIRELESS_MODE == WIFI_PRESENT
     Blynk.run();
+#endif
 
-    double voltage_reading;
-#if ADC_MODE == ADC_OVERSAMPLE
-    voltage_reading = convert_adc_val(oversample_16x());
+    uint16_t adc_reading;
+#if ADC_MODE == ADC_AVERAGE
+    adc_reading = oversample_16x() / 16;
+#elif ADC_MODE == ADC_EWMA
+    adc_reading = emwa();
 #elif ADC_MODE == ADC_SIMPLE
-    uint16_t adc_reading = analogRead(A0);
-    voltage_reading = ((double)adc_reading / (double)1024) * ((double)ADC_REF);
+    adc_reading = analogRead(A0);
 #endif
     // Send voltage reading to matlab through serial port
-    Serial.println(voltage_reading);
-    delay(100);
+    Serial.println(adc_reading);
+    delay(10);
 }
 
-#if ADC_MODE == ADC_OVERSAMPLE
+#if ADC_MODE == ADC_AVERAGE || ADC_MODE == ADC_EWMA
 
 /// Initialise pin A0
 void init_adc_pins() {
-    // Set PC0 (A0) as input pin
-    DDRC &= ~(1 << DDC0);
-    // Disable PC0 (A0) pull-up resistor
-    PORTC &= ~(1 << PORTC0);
+    // Set PC1 (A1) as input pin
+    DDRC &= ~(1 << DDC1);
+    // Disable PC1 (A1) pull-up resistor
+    PORTC &= ~(1 << PORTC1);
 }
 
 /// Initialise ADC
@@ -111,11 +118,13 @@ void init_adc() {
     ADMUX |= (1 << REFS0);
     // Right shift ADC conversion result
     ADMUX &= ~(1 << ADLAR);
-    // Choose ADC0 (A0) channel as ADC input
-    ADMUX &= ~((1 << MUX0) | (1 << MUX1) | (1 << MUX2) | (1 << MUX3));
+
+    // Choose ADC1 (A1) channel as ADC input
+    ADMUX &= ~((1 << MUX1) | (1 << MUX2) | (1 << MUX3));
+    ADMUX |= (1 << MUX0);
 
     // Disable digital input buffer for ADC0
-    DIDR0 |= (1 << ADC0D);
+    DIDR0 |= (1 << ADC1D);
 
     // Enable ADC
     ADCSRA |= (1 << ADEN);
@@ -152,6 +161,7 @@ uint16_t oversample_16x() {
 
 #endif
 
+#if WIRELESS_MODE == WIFI_PRESENT
 // Blynk controlling alert on Arduino
 // It turns on the LED and the piezoelectric speaker
 BLYNK_WRITE(V0) {
@@ -159,3 +169,4 @@ BLYNK_WRITE(V0) {
     digitalWrite(LED_PIN, pinValue);
     digitalWrite(BUZZER_PIN, pinValue);
 }
+#endif
