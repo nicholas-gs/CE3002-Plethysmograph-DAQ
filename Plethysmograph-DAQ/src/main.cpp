@@ -1,12 +1,12 @@
 /**
  * Platform: ATMega328P (Arduino Uno)
  * 
- * Get ADC reading from ADC0 channel (Pin A0) of Arduino Uno.
+ * Get ADC reading from ADC1 channel (Pin A1) of Arduino Uno.
  * 
- * The ADC in the ATMega328P is a 10-bit ADC. Oversampling is implemented
- * to obtain a 12-bit ADC conversion result. To achieve n extra bits of resolution, 2^2^n samples is divided by 2^n.
+ * The ADC in the ATMega328P is a 10-bit ADC. Multiple consecutive ADC readings are taken, and the average is used so
+ * smooth out noise
  * 
- * ADC noise reduction mode is also used to improve the noise environment for the ADC, enabling higher resolution measurements.
+ * ADC noise reduction mode is also used to improve the noise environment for the ADC, enabling higher precision measurements.
 **/
 
 #include "AuthKeys.h"
@@ -16,16 +16,16 @@
 #include <BlynkSimpleShieldEsp8266.h>
 #include <ESP8266_Lib.h>
 
-#if ADC_MODE == ADC_AVERAGE || ADC_MODE == ADC_EWMA
+#if ADC_MODE == ADC_AVERAGE
 #include <avr/sleep.h>
 #endif
 
-#if ADC_MODE == ADC_AVERAGE || ADC_MODE == ADC_EWMA
+#if ADC_MODE == ADC_AVERAGE
 // Forward declarations
 void init_adc_pins();
 void init_adc();
 void init_adc_sleepmode();
-uint16_t oversample_16x();
+uint16_t oversample_4x();
 double convert_adc_val(uint16_t adc_val);
 #endif
 
@@ -62,24 +62,23 @@ void setup() {
     // Enable global interrupts
     sei();
 #elif ADC_MODE == ADC_SIMPLE
-    pinMode(A0, INPUT);
+    pinMode(A1, INPUT);
 #endif
-    // Serial.println(esp8266.getStationIp());
-#if DEBUG_MODE == DEBUG_ON
-    Serial.println(F("Setting up Blynk"));
-#endif
+
 #if WIRELESS_MODE == WIFI_PRESENT
+    #if DEBUG_MODE == DEBUG_ON
+        Serial.println(F("Setting up Blynk"));
+    #endif
     Blynk.begin(auth, esp8266, ssid, pass);
-#endif
-#if DEBUG_MODE == DEBUG_ON
-    Serial.println(F("Blynk started!"));
+    #if DEBUG_MODE == DEBUG_ON
+        Serial.println(F("Blynk started!"));
+    #endif
 #endif
 
 #if DEBUG_MODE == DEBUG_ON
     Serial.println(F("End of setup"));
 #endif
-
-    delay(50);
+delay(50);
 }
 
 void loop() {
@@ -90,18 +89,16 @@ void loop() {
 
     uint16_t adc_reading;
 #if ADC_MODE == ADC_AVERAGE
-    adc_reading = oversample_16x() / 16;
-#elif ADC_MODE == ADC_EWMA
-    adc_reading = emwa();
+    adc_reading = oversample_4x();
 #elif ADC_MODE == ADC_SIMPLE
-    adc_reading = analogRead(A0);
+    adc_reading = analogRead(A1);
 #endif
     // Send voltage reading to matlab through serial port
     Serial.println(adc_reading);
-    delay(10);
+    delay(50);
 }
 
-#if ADC_MODE == ADC_AVERAGE || ADC_MODE == ADC_EWMA
+#if ADC_MODE == ADC_AVERAGE
 
 /// Initialise pin A0
 void init_adc_pins() {
@@ -143,20 +140,20 @@ void init_adc_sleepmode() {
     SMCR &= ~((1 << SM1) | (1 << SM2));
 }
 
-/// Convert ADC reading into voltage reading.
+/// Convert ADC reading into voltage reading. Currently not used
 double convert_adc_val(uint16_t adc_val) {
     uint16_t adc_12_bit_val = adc_val >> 2;
     return (((double)(adc_12_bit_val) / (double)(ADC_STEPS))) * (double)(ADC_REF);
 }
 
-/// Take 16 consecutive readings from the ADC
-uint16_t oversample_16x() {
+/// Take 16 consecutive readings from the ADC and returns the average
+uint16_t oversample_4x() {
     uint16_t oversampledValue = 0;
-    for (uint8_t i = 0; i < 16; i++) {
+    for (uint8_t i = 0; i < 4; i++) {
         sleep_mode();
         oversampledValue += ADC;
     }
-    return oversampledValue;
+    return oversampledValue / 4;
 }
 
 #endif
