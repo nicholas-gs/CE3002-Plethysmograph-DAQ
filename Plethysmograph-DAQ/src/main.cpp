@@ -164,6 +164,10 @@ uint16_t oversample_4x() {
 BLYNK_WRITE(V0) {
     int pinValue = param.asInt();
     digitalWrite(LED_PIN, pinValue);
-    digitalWrite(BUZZER_PIN, pinValue);
+    if(pinValue == HIGH){
+        tone(BUZZER_PIN, 1000);
+        delay(1000);
+        noTone(BUZZER_PIN);
+    }
 }
 #endif
